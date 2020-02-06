@@ -8,8 +8,8 @@ In this report we create a machine learning algorithm for classifying marine mam
 \indent We focus on the case of marine mammals. We use twenty-five vocalization sound clips each from nine animals in three categories: pinnipeds (walrus, harp seal, ross seal), dolphins (atlantic spotted dolphin, white sided dolphin, and killer whale), and whales (humpback whale, sperm whale, and white beluga whale). We test whether our supervised machine learning algorithms classify each recording accurately, both within a category of animal (can it distinguish between types of whales, e.g.) and  whether the algorithms can classify the animals across all categories (can it decide if a sound clip belongs to a pinniped, and then specifically which species of pinniped, e.g.).\\
 
 # Theoretical Background
-Time Frequency Analysis}
-        The main tool for analyzing frequency content is the Fourier transform, which decomposes a function into its respective frequencies. The absolute value of the Fourier transform represents the amount of each frequency that is present in the function. 
+## Time Frequency Analysis
+   The main tool for analyzing frequency content is the Fourier transform, which decomposes a function into its respective frequencies. The absolute value of the Fourier transform represents the amount of each frequency that is present in the function. 
         
   The main drawback of using the Fourier transform is that the time information in the signal is lost, i.e. there is no way of knowing when in time a specific frequency was produced. For non-stationary signals, this is a problem. The Gábor transform aims to solve this problem by providing information in both time and frequency. The Gábor transform of a function $f$ is defined as
         \begin{align}
@@ -23,4 +23,6 @@ Time Frequency Analysis}
         where the parameter $a$ determines the width of the Gaussian and $\tau$ is the translation in $t$.
         
    One important aspect to keep in mind is that increased time resolution, i.e. using a narrower Gábor window when filtering, results in decreased frequency resolution, and vice versa. When using narrow time windows, low frequencies will not be picked up as their wavelengths are longer than the window width. When using wide windows, lower frequencies will be captured, but, since the time window is wide, it is impossible to tell exactly when in time the frequencies originated.
-        
+   
+   
+           
