@@ -20,4 +20,14 @@ Time Frequency Analysis}
         \begin{align}
             \mathcal{G}[f](t,\,\omega) = \int_{-\infty}^{\infty} f(\tau)\Bar{g}(\tau -t)e^{-i\omega \tau}d\tau
         \end{align}
-        where $g(\tau - t)$ is some filter (Gábor window), and $\Bar{g}$ its complex conjugate. One can think of this as the filter $g$ sliding across the time signal, resulting in only a filtered part of the function $f$ being Fourier transformed at each instant. The frequency content can thus be traced back to a specific time
+        where $g(\tau - t)$ is some filter (Gábor window), and $\Bar{g}$ its complex conjugate. One can think of this as the filter $g$ sliding across the time signal, resulting in only a filtered part of the function $f$ being Fourier transformed at each instant. The frequency content can thus be traced back to a specific time window in the signal.
+        
+        When using the Gábor transform numerically, one chooses a filter, and lets the filter ``slide'' over the signal using a finite number of translations of the filter. For each location of the filter, the Fast Fourier Transform is applied to get the frequency content in this signal window. The frequency content of the entire signal can then be plotted as a spectrogram, where it is visualized as a function of both time and frequencies.
+        
+        A basic Gaussian filter is given by
+        \begin{align}
+            F(t) = e^{-a(t-\tau)^2},
+        \end{align}
+        where the parameter $a$ determines the width of the Gaussian and $\tau$ is the translation in $t$.
+        
+        One important aspect to keep in mind is that increased time resolution, i.e. using a narrower Gábor window when filtering, results in decreased frequency resolution, and vice versa. When using narrow time windows, low frequencies will not be picked up as their wavelengths are longer than the window width. When using wide windows, lower frequencies will be captured, but, since the time window is wide, it is impossible to tell exactly when in time the frequencies originated.
