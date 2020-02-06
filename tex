@@ -1,0 +1,348 @@
+\documentclass{amsart}
+\usepackage[utf8]{inputenc}
+\usepackage{appendix}
+\usepackage{graphicx}
+\usepackage{pdfpages}
+\usepackage[export]{adjustbox}
+\usepackage{float}
+\usepackage{soul}
+\usepackage{color} %red, green, blue, yellow, cyan, magenta, black, white
+\usepackage{listings}
+
+
+\title{An Exploration of Machine Learning Techniques for Taxonomy}
+\author{Molly Baird and Astrid Liljenberg}
+\date{March 22, 2019}
+
+\begin{document}
+
+\begin{abstract}
+In this report we create a machine learning algorithm for classifying marine mammal vocalizations. The algorithm is based on building spectrograms of the vocalizations and utilizing the singular value decomposition to transform the data into the optimal basis for analysis. The results from using different unsupervised and supervised classifiers in the algorithm are compared. Sound clips from a number of different species of dolphins, whales, and pinnipeds (seal-like mammals) are used to evaluate the algorithm.
+\end{abstract}
+
+\maketitle
+\vspace{-0.4cm}
+\section{\textbf{Introduction and Overview}}
+\indent Taxonomy, the science of classifying organisms, is vital to understanding the evolution of the world in which we live. Classically, biologists decide how plants and animals are related using their own inference-- but what if we could create an algorithm that classified animals with little (or even without \textit{any}) prior subjective knowledge? Equipped with time frequency analysis, machine learning, and data from the Watkins Marine Mammal Sound Database\footnote{https://cis.whoi.edu/science/B/whalesounds/index.cfm}, this is what we attempt to achieve. \\
+\indent We focus on the case of marine mammals. We use twenty-five vocalization sound clips each from nine animals in three categories: pinnipeds (walrus, harp seal, ross seal), dolphins (atlantic spotted dolphin, white sided dolphin, and killer whale), and whales (humpback whale, sperm whale, and white beluga whale). We test whether our supervised machine learning algorithms classify each recording accurately, both within a category of animal (can it distinguish between types of whales, e.g.) and  whether the algorithms can classify the animals across all categories (can it decide if a sound clip belongs to a pinniped, and then specifically which species of pinniped, e.g.).\\
+
+
+
+
+\section{\textbf{Theoretical Background}}
+    \subsection{Time Frequency Analysis}
+        The main tool for analyzing frequency content is the Fourier transform, which decomposes a function into its respective frequencies. The absolute value of the Fourier transform represents the amount of each frequency that is present in the function. The Fourier transform and the inverse Fourier transform are given by
+        \begin{align}
+            F(k) &= \frac{1}{\sqrt{2\pi}} \int_{-\infty}^{\infty} e^{-ikx}f(x)dx, \\
+            f(x) &= \frac{1}{\sqrt{2\pi}} \int_{-\infty}^{\infty} e^{ikx}F(k)dk,
+        \end{align}
+        where the $k$'s are the wavenumbers.
+        
+        The main drawback of using the Fourier transform is that the time information in the signal is lost, i.e. there is no way of knowing when in time a specific frequency was produced. For non-stationary signals, this is a problem. The Gábor transform aims to solve this problem by providing information in both time and frequency. The Gábor transform of a function $f$ is defined as
+        \begin{align}
+            \mathcal{G}[f](t,\,\omega) = \int_{-\infty}^{\infty} f(\tau)\Bar{g}(\tau -t)e^{-i\omega \tau}d\tau
+        \end{align}
+        where $g(\tau - t)$ is some filter (Gábor window), and $\Bar{g}$ its complex conjugate. One can think of this as the filter $g$ sliding across the time signal, resulting in only a filtered part of the function $f$ being Fourier transformed at each instant. The frequency content can thus be traced back to a specific time window in the signal.
+        
+        When using the Gábor transform numerically, one chooses a filter, and lets the filter ``slide'' over the signal using a finite number of translations of the filter. For each location of the filter, the Fast Fourier Transform is applied to get the frequency content in this signal window. The frequency content of the entire signal can then be plotted as a spectrogram, where it is visualized as a function of both time and frequencies.
+        
+        A basic Gaussian filter is given by
+        \begin{align}
+            F(t) = e^{-a(t-\tau)^2},
+        \end{align}
+        where the parameter $a$ determines the width of the Gaussian and $\tau$ is the translation in $t$.
+        
+        One important aspect to keep in mind is that increased time resolution, i.e. using a narrower Gábor window when filtering, results in decreased frequency resolution, and vice versa. When using narrow time windows, low frequencies will not be picked up as their wavelengths are longer than the window width. When using wide windows, lower frequencies will be captured, but, since the time window is wide, it is impossible to tell exactly when in time the frequencies originated.
+
+    \subsection{The Singular Value Decomposition (SVD)}
+            Any matrix $M \in \mathbb{C}^{m\times n}$ represents a linear transformation that can be characterized by the manner in which it maps the unit $n$-ball.\\
+            \indent Under this mapping by $M$, the unit ball is stretched into a hyper-ellipse, which can be identified by the lengths of its principal semi-axes. These lengths $\{ \sigma_1, \ldots, \sigma_r\}$ are what we call the \textit{singular values} of the matrix $M$. Note that this geometric definition as a length will mean that all the singular values are taken to be positive.\\
+           \indent The singular value decomposition (SVD) of a matrix $M$ is a factorization of the form $M = U\Sigma V^*$ such that diag($\Sigma) = [ \sigma_1, \ldots, \sigma_n]$, and $U\in\mathbb{C}^{m\times m}$ and $V \in \mathbb{C}^{n\times n}$ are unitary matrices (matrices that preserve length of vectors) whose columns are the left and right singular vectors of $M$ (respectively).\\
+           \indent Worth noting are the following facts about singular values and the SVD:
+           \begin{itemize}
+                \item \textit{Every} matrix has an SVD.
+                \item Singular values are uniquely determined up to complex scalars of norm 1.
+               \item $r=rank(M)=$(the number of nonzero singular values of $M$).
+               \item It is standard to arrange the singular values in decreasing order along the diagonal so that $\Sigma_{1,1}=\sigma_1 \geq \sigma_2 \geq \cdots \sigma_r \geq 0$.
+               \item Singular values of $M$ are the square roots of the eigenvalues of $M^*M$ where $M^*$ is the conjugate transpose of $M$.
+               \item The best \textit{rank-k approximation} to a matrix $M = U\Sigma V^*$ is $\sum_{i=1}^k \sigma_iu_iv_i^*$.
+           \end{itemize}
+           
+            The SVD is directly related to data driven modeling because of its relationship to the \textit{covariance matrix}. \\
+            \indent Given a matrix $M \in\mathbb{C}^{m\times n} $ of data measurements, its covariance matrix is $C_M = \frac{1}{n-1}MM^T$. This is a symmetric matrix whose diagonal entries represent the variance of the measurements in $M$, and whose off diagonal entries represent the covariances between measurement types. \\
+            \indent The covariance matrix allows one to gain insight into redundancy patterns in the data contained in $M$. Removal of redundancy in data is a crucial step in data analysis, because redundancy suggests statistical dependency between measurements. This dependency must be removed before drawing any conclusions. \\
+            \indent Diagonal entries of $C_M$ which are larger relative to other diagonal entries correspond to dynamics of interest. Off-diagonal entries of the covariance matrix reveal the degree of redundancy of two measurements: larger off diagonal entry means more redundancy, small off diagonal entry means less redundancy and more statistical independence. \\
+            \indent Diagonalizing (finding the eigendecomposition of) the covariance matrix, and then ordering these diagonal entries by magnitude reveals the principal components of the covariance matrix. This allows one to do away with the dynamics that are not of interest while also reducing the redundancy. (Note: the eigendecomposition will exist since $M^TM$ is Hermitian positive semi-definite).\\
+            \indent Since the squares of the singular values of $M$ are the eigenvalues of the matrix $M^TM$, the SVD and the eigen-decomposition of the covariance matrix go hand in hand in determining the basis in which our data ``wants'' to be displayed.\\
+            \indent For an $n\times n$ singular value matrix $\Sigma$, the energy of the modes, i.e. the percentage of information captured by the first $k$ modes is 
+            \begin{align}
+                \frac{\sum_{i=1}^k\sigma_i}{ \sum_{i=1}^n\sigma_i}
+            \end{align} 
+        
+    \subsection{Machine Learning}
+    Machine learning algorithms are a broad set of optimization techniques that allow one to model data with few starting assumptions. The general idea of machine learning is that the scientist gives the algorithm some data, and the algorithm then ``learns'' or reveals the governing structures within the data. The algorithms vary based upon how much data one has, how noisy that data is, and how much the scientist knows about their data before implementation of the algorithm. \\
+        \indent There are two overarching types of machine learning algorithms: unsupervised learning and supervised learning. In both cases, one begins with a set $\mathcal{D}$ of data (that is presumably a subset of some theoretical set of all possible elements of that data, i.e. $\mathcal{D}=${20 dogs} is contained in the set of all dogs on Earth). This data is the input to the algorithm, and the algorithm outputs a set $L$ of labels, one label for each element of $\mathcal{D}$. Perhaps there are only two labels, meaning that all the data is in one of two categories, or perhaps there are many. This is is the framework of unsupervised learning: the scientist gives the algorithm some data, and the algorithm labels it. With supervised learning, the input is not only the set $\mathcal{D}$, but also a set $Y$ of labels for the algorithm to choose from. Thus in the supervised case the scientist is effectively imparting more information onto the model by saying, ``I know that my data should be classified in these exact labels.''\\
+        \indent We now outline the theory behind the machine learning algorithms employed in this project: 
+        
+        \subsubsection{k-means}
+        A simple unsupervised classification algorithm is the k-means method. The name refers to the goal of finding $k$ cluster centers such that their means $\mu_j$ satisfy
+        \begin{align}
+            \text{argmin}_{\mu_j} \sum_{j=1}^k \sum_{x_j\in \mathcal{D}'_j} ||x_j - \mu_j||^2
+        \end{align}
+        where the $x_j$'s are the data points and $\mathcal{D}'_j$ is the subdomain associated with cluster $j$. This optimization problem is solved through heuristic algorithms, such as Lloyd's algorithm, because it is a NP hard problem. One important property is that there is not necessarily only one unique output from the algorithm, but it depends on the initial guess of the cluster centers. If the centers are randomized at the beginning, this means the algorithm could potentially produce different results each time. Once the cluster centers have been decided, new data points are labeled based on the closest cluster center. Just like other unsupervised classifiers, the k-means method is generally not as good as supervised algorithms.
+        
+       
+       
+        \subsubsection{Hierarchical Clustering with the Dendrogram}
+        Another unsupervised machine learning algorithm for clustering (and for visualizing those clusters) is the dendrogram. A dendrogram is a discrete tree whose leaves are the data points and whose branches represent the closeness of those data points to one another. \\
+        \indent Hierarchical clustering methods generally take one of two approaches: agglomerative (bottom up) or divisive (top down). In an agglomerative approach, each data point begins as its own singleton cluster, and the data is re-clustered until every data point finally ends up in one large cluster. A divisive approach is the reverse scenario where all the data begins in one cluster and is then split up until finally every data point is in its own cluster. \\
+        \indent The dendrogram algorithm we focus on here proceeds via an agglomerative method that makes decisions based on distance between points. ``Distance'' is the (vector) norm of the difference between the centers of two clusters. The choice of vector norm (euclidean, square euclidean, one norm, infinity norm, etc.) greatly influences the patterns in the dendrogram. \\
+        \indent The algorithm itself proceeds in the following steps:
+        \begin{itemize}
+            \item The distance between all $n$ data points $x_j$ is computed.
+            \item The closest two data points are merged into a single data point equidistant from these two data points (the center of a new cluster).
+            \item Repeat the first two steps with the new $n-1$ data points.
+            \item Stop when $n = 1$.
+        \end{itemize}
+        \indent A threshold is then chosen which dictates the labeling of where each point belongs in the hierarchical scheme. Varying the threshold value gives different numbers of clusters. \\
+    
+    
+    
+    
+        \subsubsection{Support Vector Machines}
+        \indent Support vector machines (SVM) were first developed in 1963 by Vapnik and Chervonenkis. The basic idea of SVM is to construct a function which separates data into clusters. The cluster on one side of the separation function gets one label, and the cluster on the other side gets a different label. \\
+        \indent We classify SVM in terms of the type of its separation function: linear and nonlinear. The goal of linear SVM is to construct a hyperplane $H(x) = w\cdot x + b = 0$ which separates the data and also optimizes the largest margin between the data. We formulate this optimization problem via a loss function $l$
+        \begin{align} 
+        l(y_j, \overline y_j) = l(y_j, \text{sign}(w\cdot x_j+b)) = \begin{cases}
+             0 &  \text{correctly labeled data}\\
+             1 &  \text{incorrectly labeled data}
+        \end{cases} 
+        \end{align} 
+        This way, each mislabeled point increases the value of the penalty (loss) function. Minimizing this function obtains the optimal line, and our optimization problem becomes 
+        \begin{align}
+        \text{argmin}_{w,b} \sum_{j=1}^m l(y_j \overline y_j) + \frac{1}{2} ||w||^2 \quad s.t. \quad \min_j |x_j \cdot w| = 1 
+        \end{align}
+        
+        Standard optimization techniques like gradient descent (to get to the extrema) are then carried out to find the optimal value. \\
+        \indent The linear SVM is then extended to the nonlinear case in which our hyperplane is composed with some nonlinear function of $x$: 
+        \begin{align} H(\Phi(x))=w\cdot \Phi(x) + b = 0
+        \end{align} In this case, $\Phi$ may operate on the coordinates of $x$ by way of polynomials, trigonometric functions, a combination of the two, or something else. Optimization techniques for minimzation then become more complicated fairly quickly, as gradient descent may not return the absolute min of a nonlinear (and thus potentially nonconvex) function.\\
+        \indent One issue with this method that arises with large data sets is the so-called ``curse of dimensionality,'' where the optimization problem in the SVM method becomes computationally intractable. One way to fix this is via kernel methods, which essentially allows us to represent Taylor series expansions of a large number of observables in a compact way. The kernel function enables one to operate in a highdimensional, implicit feature space without ever computing the coordinates of the data in that space, but rather by simply computing the inner products between all pairs of data in the feature space. \\
+        
+        
+        \subsubsection{Naive Bayes}
+        The naive Bayes classifier is based on the famous Bayes' theorem for conditional probability, and is thus a probabilistic classifier. For a new data point $\mathbf{x}$, the probability of the data point belonging in a class $C_k$ can be expressed by Bayes' theorem as
+        \begin{align}
+            \mathbb{P}(C_k | \mathbf{x}) = \frac{\mathbb{P}(C_k)\mathbb{P}(\mathbf{x}|C_k)}{\mathbb{P}(\mathbf{x})}.
+        \end{align}
+        Class labels $\hat{y}=C_k$ are assigned by solving
+        \begin{align}
+            \hat{y} = \text{argmax}_k \mathbb{P}(C_k) \prod_{i=1}^n \mathbb{P}(x_i|C_k),
+        \end{align}
+        where $\mathbf{x} = (x_1,\dots,x_n)$. A naive Bayes model can be constructed using the built-in function \texttt{fitcnb} in MATLAB, and can then be used to predict the labels of new data points.
+        
+        
+        \subsubsection{Cross Validation}
+            \indent A crucial final step for all methods is cross-validation. This tests the algorithm with data that is already labeled (if labels are available). One gives the algorithm the data, sees how the algorithm labels it, and then compares these labels with the true labels. This is important for determining the accuracy of the algorithm, and for potentially editing the methods if the algorithm is inaccurate. 
+        
+
+\section{\textbf{Algorithm Implementation and Development}}
+
+        \indent The algorithm is structured into five main parts: readying the data, the k-means algorithm, the dendrogram, the support vector machine, and naive bayes. \\
+        
+        \subsection{Readying the Data}
+        First, a for loop reads each of the 225 sound clips (9 animals, 25 samples each) into MATLAB and saves their sample rate and total time length of the clip. \\
+        \indent All clips are trimmed to be the minimum time length of all clips. Then, using the sample rate, the clips are resampled to the same sample rate so that each data vector has the same dimension and corresponds to sound clips of the same time length.\\
+        \indent A spectrogram of each normalized sound clip is computed using the \newline\texttt{spectrogram} function in MATLAB. A Gaussian window (\texttt{gausswin} in MATLAB) is used for the spectrograms. Different window widths were compared, but the initial window width of 100 points was chosen by inspecting the localization of a sample spectrogram. Every spectrogram is then reshaped into a column vector and these columns are collected into a matrix $X$.\\
+        \indent $X$ is now a matrix with 9$\times$25 columns, with each 25 column chunk corresponding to the samples for one species of animal. The absolute value of $X$ is taken (as we're interested in the amount of a frequency at a certain time), and the order of the columns within each 25-column chunk are randomized. This ensures that the results of our supervised algorithms are not too dependent on which samples are used as training data and which are used as testing data.\\
+        \indent The mean of each column of the randomized matrix is subtracted from itself to center the data around 0, and then the singular value decomposition is computed using the \texttt{svd} command in MATLAB.
+        
+    \subsection{k-means}
+        For $k$-means estimation, the \texttt{kmeans} function in MATLAB is used directly on the $X$ matrix with a $k$ value of 9. This value was chosen because we have the prior knowledge that there are 9 species of animals to classify.
+    
+    \subsection{Dendrogram}
+        The Euclidean distance was chosen for the implementation of the dendrogram algorithm. The algorithm itself is carried out and visualized by the \texttt{dendrogram} command in MATLAB, and it is applied directly on the $X$ matrix. Various thresholds are experimented with, and ultimately $0.85*m$ where $m$ is the max of the third column of the matrix generated by the \texttt{linkage} function is chosen.\\
+        \indent A dendrogram is created to classify all 225 sound clips. In addition, a bar graph is plotted with the weights of each data point within the dendrogram. Data points corresponding to the same species would ideally have the same weight in the dendrogram. 
+    
+    
+    \subsection{Support Vector Machine}
+        After deciding which modes to include (based on the relative sizes of the singular values), the training data vector is created, and the labels are assigned to that data. The proportion of data used for training and testing is written as a variable with which we experiment. However, it is not the raw data that is used, but rather the first $k$ columns of the matrix $V$ from the SVD that corresponded to the $k$ modes of importance. Then the vector of the true labels of the test data for cross validation is created. The functions \texttt{fitcecoc, predict, crossval, kfoldloss} in MATLAB are then employed to run the SVM analysis and cross validation. Note that \texttt{fitcecoc} is used rather than \texttt{fitsvm} because there are more than 2 desired labels. 
+    
+    \subsection{Naive Bayes}
+        The algorithm using the naive Bayes classifyer is identical to that of the SVM described above, the only difference being that the MATLAB command is \texttt{fitcnb} instead of \texttt{fitcecoc}. The same number of modes are used, and the results are cross validated in the same way as above. 
+     
+        
+
+
+
+\section{\textbf{Computational Results}}
+The shortest sound clip was of length 1.0111 seconds, and the smallest sample rate was 5120, so all clips were trimmed to that length and resampled to that sample rate.
+    \subsection{Spectrograms}
+    When computing the spectrograms of the sound clips, we used a Gaussian window of size 100. A sample spectrogram of one of the killer whale clips is illustrated in figure \ref{fig:spectrogram}.
+    \begin{figure}[t!]
+    \centering
+    \includegraphics[width=\textwidth, trim={0cm 0cm 0cm 0cm},clip]{spectrogram.png}
+    \caption{Spectrogram of a killer whale sound clip.}
+    \label{fig:spectrogram}
+    \end{figure}
+    
+    
+    \subsection{Singular Values}
+    The first 100 singular values from the SVD are illustrated in figure \ref{fig:sing}. They correspond to almost 80\% of the energy in the modes, so we decided to truncate the matrix $V$ at rank 100.
+    
+
+    \begin{figure}[t!]
+    \centering
+    \includegraphics[width=\textwidth, trim={2cm 0cm 2cm 0cm},clip]{singValsFINAL.png}
+    \caption{The first 100 (normalized) singular values plotted together with the cumulative energy in the modes.}
+    \label{fig:sing}
+    \end{figure}
+    
+    
+    
+    \subsection{k-means}
+    The results from using the k-means method with $k=9$ to classify the data in $X$ is visualized as a histogram in figure \ref{fig:k-means}, where we can see the number of clips in each of the clusters. We know a priori that there should be an equal amount of clips in each of the 9 clusters, but here almost two thirds are clustered together. 
+    \begin{figure}[t!]
+        \centering
+        \includegraphics[width = \textwidth]{kmeansHistoFINAL.png}
+        \caption{Histogram showing the number of sound clips grouped into each cluster by the k-means method.}
+        \label{fig:k-means}
+    \end{figure}
+    
+    
+    \subsection{Dendrogram}
+    The dendrogram gave four clusters, one of which was much larger than the rest (see figure 4). The clustering outcome for each sample was plotted as a bar graph (see figure 5), with red vertical lines dividing the samples that corresponded to the same species. 
+    
+    
+    \begin{figure}[t!]
+        \centering
+        \includegraphics[width=\textwidth]{dendrogramTreeFINAL.png}
+        \caption{Dendrogram tree illustrating the evolution of the classification, with different colors corresponding to different clusters.}
+        \label{fig:my_label}
+    \end{figure}
+    \clearpage
+    \begin{figure}[t!]
+        \centering
+        \includegraphics[width = \textwidth]{dendroFINAL.png}
+        \caption{Clustering outcome of dendrogram routine. Ideally, each group of 25 along the Sound Clip axis would have a height within 25 of one another. The algorithm mislabeled many clips.}
+        \label{fig:dendroFINAL}
+    \end{figure}
+    
+    
+    %\clearpage
+    \subsection{Support Vector Machine}
+    We used 20 clips of each animal as a training set, and the remaining 5 as a test set. We ran two experiments with the SVM.\\
+    \indent In the first experiment, we used all 9 species, and tested how accurately the algorithm could assign a sound clip to its specific species. The overall accuracy for this was 33\%. The class loss was 0.7056. We also analyzed how well the algorithm categorized each sound clip into type of species (pinniped, whale, or dolphin). The success rates are presented in table \ref{tab:svm}, where the columns sum to 100\% and the diagonal cells are the percentage of correct classifications.
+    \vspace{-0.1cm}
+    \begin{table}[h!]
+    \caption{}
+    \begin{tabular}{c||c|c|c}
+    \textbf{SVM} & New Pinnipeds & New Dolphins & New Whales \\ \hline \hline
+    Pinnipeds & 33.33\%       & 13.33\%      & 20\%       \\
+    Dolphins  & 40\%          & 46.67\%      & 26.67\%    \\
+    Whales    & 26.67\%       & 40\%         & 53.33\%   
+    \end{tabular}
+    \label{tab:svm}
+    \end{table}
+    \vspace{-0.1cm}
+    
+    
+    In the second experiment, we tested whether the algorithm could assign a sound clip to a particular species within one category (for example, can it label a dolphin sound clip specifically as a white sided dolphin). This second experiment was run three times, and in each run only the 3*25 sound clips corresponding to one category of animal were used in the training and test data. Within the pinnipeds, the class loss was 0.5167 and the overall accuracy was 0.5333. Within the dolphins, class loss was 0.3833 and overall accuracy was 0.5333. Within the whales the class loss was 0.4667 and the overall accuracy was 0.5333. (Note: it is curious that the overall success rate was 0.5333 for each of the categories. This was investigated thoroughly and is believed to be a coincidence rather than a coding error.)
+    
+    \subsection{Naive Bayes}
+    We again used 20 clips of each animal as a training set, and the remaining 5 as a training set. The same two experiments as in the SVM section were run. \\
+    \indent In the first experiment (with all 9 species), the overall accuracy when using the naive Bayes algorithm was 40\%. Again, we computed how well the algorithm classified the clips into the three overall categories. The results are presented in table \ref{tab:nb}. The diagonal cells show the percentage of correct classifications. The class loss was 0.71.
+        \vspace{-0.2cm}
+        \begin{table}[ht]
+        \caption{}
+    \begin{tabular}{c||c|c|c}
+    \textbf{Naive Bayes}        & New Pinnipeds & New Dolphins & New Whales \\ \hline \hline
+    Pinnipeds & 33.33\%       & 0\%          & 6.67\%     \\
+    Dolphins  & 20\%          & 66.67\%      & 26.67\%    \\
+    Whales    & 46.67\%       & 33.33\%      & 66.67\%   
+    \end{tabular}
+    
+    \label{tab:nb}
+    \end{table}
+    \vspace{-0.1cm}
+    
+    \indent The second experiment was carried out for naive bayes as well, and in each run of the experiment only the 3$\times$25 sound clips corresponding to one category of animal were used in the training and test data. Within the pinnipeds, the class loss was .3833 and the overall accuracy was 0.5333. Within the dolphins the class loss was 0.4833 and the overall accuracy was 0.8. Within the whales the class loss was 0.4333 and the overall accuracy was 0.4667.
+
+
+\section{\textbf{Summary and Conclusions}}
+% fewer sing vals gave more dolphins
+    \indent If one were to blindly guess what animal a random sound clip belonged to, the likelihood of success would be 11\% (1/9). In the case of classifying all nine animals, our supervised learning algorithms reported success rates of 33\% and 40\%-- three to four times as high as randomly guessing. Thus, we consider this portion of the experiment an overall success. In the case of classifying sound clips within one category (harp seal vs. ross seal vs. walrus, e.g.), blind guessing would yield a 33\% (1/3) success rate. Our supervised algorithms had an average success rate of 56.6\%, which is still better than guessing (although not three times better as in the previous case). This aligns with what we would expect from these classification algorithms; it should be more difficult to distinguish similar animals from one another than to distinguish very different animals from one another.\\
+    \indent The unsupervised algorithms performed very poorly. The k-means method put many sound clips all in one cluster, while the other clusters were much smaller (see Figure 3). This performed so badly that we did not cross-validate the model, as it was clear from the histogram how poor the results were. The dendrogram gave a similarly poor result, putting most clips in one cluster, as seen by the green branches in Figure 4.\\
+    \indent The first singular value was relatively much larger than all the others. Perhaps this explains some of the tendency to put many animals in just one category. \\
+    \indent This experiment could be improved in many ways. It is likely that the best way the results could be improved would be if the sound clips were longer. We experimented with splicing the sound clips in the middle rather than the beginning, but results did not improve. A larger number of sound clips would also likely improve the results. Also, many of the clips were from the 1960's, so data with less noise recorded on newer equipment might improve results. \\
+    \indent Overall, this project demonstrates the power of supervised learning over unsupervised learning. These methods could definitely be extended to ask questions related to any variety of organism, and could prove to be powerful tools in the science of taxonomy.\\ 
+
+\section{\textbf{Appendix A: MATLAB Functions used}}
+
+\begin{itemize}
+    \item \texttt{abs} Returns the absolute value
+    \item \texttt{audioread} Reads in a .wav file
+    \item \texttt{cell(M,N)} creates an M times N cell array
+    \item \texttt{cd} changes the current directory
+    \item \texttt{crossval} Runs cross validation
+    \item \texttt{dendrogram, pdist, linkage} MATLAB's built in dendrogram functions 
+    \item \texttt{diag} Returns the diagonal of a given matrix as a vector
+    \item \texttt{dir} Goes to the directory with a given name
+    \item \texttt{double} Converts uint8 into doubles
+    \item \texttt{fitcecoc} Runs the SVM algorithm but for any desired finite number of labels
+    \item \texttt{fitcnb} returns a naive Bayes model given some data and their labels
+    \item \texttt{flipud} Flips an image in the up-down direction
+    \item \texttt{floor} rounds a decimal number down to the nearest integer
+    \item \texttt{fullfile} Creates a URL to a given folder within a directory
+    \item \texttt{gausswin} returns a gaussian window
+    \item \texttt{histcounts(X,EDGES)} counts the number values in X between each of the edges
+    \item \texttt{imagesc(X)} displays the image in X but rescaled so that the full colormap is used
+    \item \texttt{kfoldLoss} Measures the accuracy of the SVM algorithm
+    \item \texttt{kmeans(X,k)} labels the data in X using k labels
+    \item \texttt{length(X)} returns the length of the vector X
+    \item \texttt{mean} Returns the average
+    \item \texttt{min(X) max(x)} returns the min/max in each column if X is a matrix, and the overall min/max if X is a vector
+    \item \texttt{pcolor} Plots an images with a specific color scheme
+    \item \texttt{predict} Predicts the label of the test data given the results of SVM
+    \item \texttt{randperm(N,K)} returns a vector with K unique integers randomly selected from 1:N
+    \item \texttt{resample(X,P,Q)} resamples the data in X at P/Q times the original sample rate
+    \item \texttt{reshape} Turns our data into a matrix of a prescribed size
+    \item \texttt{save} Saves an object with a designated name
+    \item \texttt{size(X)} returns the size of a matrix X
+    \item \texttt{spectrogram(X)} Creates a spectrogram of the data in X
+    \item \texttt{svd, 'econ'} Returns three matrices, the Singular value decomposition of a desired matrix, 'econ' to handle a larger matrix
+    \item \texttt{zeros(M,N)} returns a M times N matrix of zeros
+    \item \texttt{plot}, \texttt{title}, \texttt{xlabel}, \texttt{ylabel}, \texttt{legend} and \texttt{set(gca,'xtick',[])} were used plot, and to set the titles, axis labels, and legends of plots, and to turn off the axes ticks
+\end{itemize}
+
+\newpage
+
+
+\section{\textbf{Appendix B: MATLAB Code}}
+\definecolor{mygreen}{RGB}{28,172,0} % color values Red, Green, Blue
+\definecolor{mylilas}{RGB}{170,55,241}
+\setcounter{MaxMatrixCols}{30}
+\definecolor{dkgreen}{rgb}{0,0.6,0}
+\definecolor{gray}{rgb}{0.5,0.5,0.5}
+\definecolor{mauve}{rgb}{0.58,0,0.82}
+\lstset{language=Matlab,%
+    %basicstyle=\color{red},
+    breaklines=true,%
+    morekeywords={matlab2tikz},
+    keywordstyle=\color{black},%
+    morekeywords=[2]{1}, keywordstyle=[2]{\color{black}},
+    identifierstyle=\color{black},%
+    stringstyle=\color{mylilas},
+    commentstyle=\color{mygreen},%
+    showstringspaces=false,%without this there will be a symbol in the places where there is a space
+    numbers=left,%
+    numberstyle={\tiny \color{black}},% size of the numbers
+    numbersep=9pt, % this defines how far the numbers are from the text
+    emph=[1]{for,end,break,if,else},emphstyle=[1]\color{blue}, %some words to emphasise
+    %emph=[2]{word1,word2}, emphstyle=[2]{style},    
+}
+\lstinputlisting{mainFinal.m}
+
+\end{document}
+
+
