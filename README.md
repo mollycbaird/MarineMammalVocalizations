@@ -31,3 +31,4 @@ Time Frequency Analysis}
         where the parameter $a$ determines the width of the Gaussian and $\tau$ is the translation in $t$.
         
         One important aspect to keep in mind is that increased time resolution, i.e. using a narrower Gábor window when filtering, results in decreased frequency resolution, and vice versa. When using narrow time windows, low frequencies will not be picked up as their wavelengths are longer than the window width. When using wide windows, lower frequencies will be captured, but, since the time window is wide, it is impossible to tell exactly when in time the frequencies originated.
+        
